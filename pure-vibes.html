@@ -105,7 +105,7 @@
   }
   .swatch:hover { transform: scale(1.15); }
   .swatch.active {
-    border-color: rgba(255,255,255,0.8);
+    border-color: rgba(255,255,255,0.35);
     transform: scale(1.2);
   }
 
@@ -113,7 +113,7 @@
   #active-color-dot {
     width: 28px; height: 28px;
     border-radius: 50%;
-    border: 2px solid rgba(255,255,255,0.5);
+    border: 2px solid #ffffff;
     cursor: pointer;
     flex-shrink: 0;
     transition: transform 0.15s;
@@ -128,17 +128,66 @@
     pointer-events: none;
   }
 
-  /* size indicator */
+  /* size indicator (also acts as a button to open the brush picker) */
   #size-dot-wrap {
     display: flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px;
-    cursor: default;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    border: 0.5px solid transparent;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    color: var(--text-muted);
+    position: relative;
   }
+  #size-dot-wrap:hover { background: var(--accent); border-color: var(--toolbar-border); color: var(--text); }
+  #size-dot-wrap.active { background: var(--accent-hover); border-color: var(--toolbar-border); color: var(--text); }
   #size-dot {
     border-radius: 50%;
-    background: rgba(255,255,255,0.35);
-    transition: width 0.1s, height 0.1s;
+    background: currentColor;
+    opacity: 0.55;
+    transition: width 0.15s, height 0.15s, opacity 0.15s;
   }
+  #size-dot-wrap:hover #size-dot, #size-dot-wrap.active #size-dot { opacity: 1; }
+
+  /* ── BRUSH SIZE OVERLAY ── */
+  #brush-overlay {
+    position: fixed;
+    bottom: calc(24px + var(--toolbar-h) + 10px);
+    left: 0; /* positioned dynamically on open */
+    background: var(--toolbar-bg);
+    border: 0.5px solid var(--toolbar-border);
+    border-radius: 16px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 14px 18px;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 99;
+    min-width: 180px;
+  }
+  #brush-overlay.open { display: flex; }
+  .brush-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .brush-item:hover { background: var(--accent); color: var(--text); }
+  .brush-item.active { background: var(--accent-hover); color: #fff; }
+  .brush-preview {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .brush-preview-dot {
+    border-radius: 50%;
+    background: rgba(255,255,255,0.45);
+  }
+  .brush-item.active .brush-preview-dot { background: #7dd3fc; }
 
   /* ── PALETTE OVERLAY ── */
   #palette-overlay {
@@ -438,6 +487,9 @@
 <!-- MUSIC OVERLAY -->
 <div id="music-overlay"></div>
 
+<!-- BRUSH SIZE OVERLAY -->
+<div id="brush-overlay"></div>
+
 <!-- INSTRUCTIONS PANEL -->
 <div id="instructions">
   <h2>Pure Vibes</h2>
@@ -456,11 +508,11 @@
   </div>
   <div class="instr-row">
     <div class="instr-icon">↓</div>
-    <div class="instr-text"><strong>Pour</strong> — Right-click (or long-press on mobile) and hold to stream paint downward continuously.</div>
+    <div class="instr-text"><strong>Pour</strong> — Select the pour tool, then click and hold to stream paint downward continuously.</div>
   </div>
   <div class="instr-row">
     <div class="instr-icon" style="font-size:12px;">⊕</div>
-    <div class="instr-text"><strong>Brush size</strong> — Scroll wheel to resize. Pinch on touch devices.</div>
+    <div class="instr-text"><strong>Brush size</strong> — Click the size dot in the toolbar to choose Small, Medium, Large, or Huge.</div>
   </div>
   <div class="instr-row">
     <div class="instr-icon" style="font-size:12px;">JPG</div>
@@ -487,7 +539,7 @@
   </button>
   <button class="tool-btn" id="btn-pour" onclick="setMode('pour')" title="Pour">
     <svg viewBox="0 0 20 20"><circle cx="10" cy="4" r="2.5"/><path d="M10 6.5 Q9 10 8 14 Q9 16 10 19" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="7" cy="15" r="1.2" opacity=".5"/><circle cx="12" cy="16" r="1" opacity=".4"/><circle cx="9" cy="18" r="0.9" opacity=".4"/></svg>
-    <span class="tooltip">Pour (right-click / long-press)</span>
+    <span class="tooltip">Pour (click + hold)</span>
   </button>
 
   <div class="divider"></div>
@@ -506,8 +558,8 @@
 
   <div class="divider"></div>
 
-  <!-- SIZE INDICATOR -->
-  <div id="size-dot-wrap" title="Scroll to resize">
+  <!-- SIZE INDICATOR (click to pick brush size) -->
+  <div id="size-dot-wrap" onclick="toggleBrushPicker()" title="Brush size">
     <div id="size-dot"></div>
   </div>
 
@@ -545,12 +597,16 @@
 // the HTML Audio element for that track and Web Audio for the others.
 // ─────────────────────────────────────────────────────────────────────────
 const TRACKS = [
-  { name: 'Lo-fi Drift',   generated: true,  mood: 'lofi'   },
-  { name: 'Deep Space',    generated: true,  mood: 'space'  },
-  { name: 'Rain Garden',   generated: true,  mood: 'rain'   },
-  { name: 'Jazz Minimal',  generated: true,  mood: 'jazz'   },
-  { name: 'Crystal',       generated: true,  mood: 'crystal'},
-  { name: 'Mute',          generated: false, url: null      },
+  { name: 'Lo-fi Chillhop',  generated: true,  mood: 'lofiHop'  },
+  { name: 'Synthwave',       generated: true,  mood: 'synthwave'},
+  { name: 'Deep House',      generated: true,  mood: 'deepHouse'},
+  { name: 'R&B Groove',      generated: true,  mood: 'rnb'      },
+  { name: 'Melodic Techno',  generated: true,  mood: 'techno'   },
+  { name: 'Ambient Pop',     generated: true,  mood: 'ambient'  },
+  { name: 'Chillwave',       generated: true,  mood: 'chillwave'},
+  { name: 'Future Garage',   generated: true,  mood: 'garage'   },
+  { name: 'Italo Disco',     generated: true,  mood: 'italo'    },
+  { name: 'Mute',            generated: false, url: null        },
 ];
 
 const PALETTES = [
@@ -560,6 +616,14 @@ const PALETTES = [
   { name: 'Neon Night', colors: ['#FF00FF','#00FFFF','#FF3131','#FFFF00','#39FF14','#BF5FFF'] },
   { name: 'Desert Sand',colors: ['#E9C46A','#F4A261','#E76F51','#264653','#2A9D8F','#A8DADC'] },
   { name: 'Monochrome', colors: ['#FFFFFF','#CCCCCC','#999999','#555555','#222222','#000000'] },
+];
+
+// ── BRUSH SIZE PRESETS ─────────────────────────────────────────────────────
+const BRUSH_SIZES = [
+  { name: 'Small',  size: 10 },
+  { name: 'Medium', size: 18 },
+  { name: 'Large',  size: 32 },
+  { name: 'Huge',   size: 50 },
 ];
 
 // ═══════════════════════════════════════════════
@@ -584,7 +648,7 @@ let dragLast = null;
 let toolbarFadeTimer = null;
 let paletteOpen = false;
 let musicOpen = false;
-let longPressTimer = null;
+let brushOpen = false;
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -600,11 +664,15 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth;
   const h = window.innerHeight;
-  // Save current image
-  const tmp = document.createElement('canvas');
-  tmp.width = canvas.width;
-  tmp.height = canvas.height;
-  tmp.getContext('2d').drawImage(canvas, 0, 0);
+  // Save current image only if the canvas actually has pixels
+  const hasPixels = canvas.width > 0 && canvas.height > 0;
+  let tmp = null;
+  if (hasPixels) {
+    tmp = document.createElement('canvas');
+    tmp.width = canvas.width;
+    tmp.height = canvas.height;
+    tmp.getContext('2d').drawImage(canvas, 0, 0);
+  }
 
   canvas.width = w * dpr;
   canvas.height = h * dpr;
@@ -615,7 +683,7 @@ function resizeCanvas() {
   // Restore bg
   ctx.fillStyle = '#0d0d1a';
   ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(tmp, 0, 0, w, h);
+  if (tmp) ctx.drawImage(tmp, 0, 0, w, h);
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -751,12 +819,11 @@ function getPos(e) {
 
 // -- POINTER DOWN
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) { startPour(e); return; }
+  if (e.button !== 0) return;
   onPointerDown(e);
 });
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  longPressTimer = setTimeout(() => { startPour(e); }, 500);
   onPointerDown(e);
 }, { passive: false });
 
@@ -777,13 +844,16 @@ function onPointerDown(e) {
 
     chargeTimer = setInterval(() => {
       const elapsed = Date.now() - chargeStart;
-      const power = Math.min(elapsed / 2000, 1);
+      const power = Math.min(elapsed / 1538, 1);
       updateChargeRing(pos.x, pos.y, power);
     }, 30);
 
   } else if (mode === 'drag') {
     isDragging = true;
     dragLast = getPos(e);
+
+  } else if (mode === 'pour') {
+    startPour(e);
   }
 }
 
@@ -803,7 +873,6 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  clearTimeout(longPressTimer);
   if (isDragging && mode === 'drag') {
     const pos = getPos(e);
     const vel = { x: pos.x - dragLast.x, y: pos.y - dragLast.y };
@@ -814,12 +883,10 @@ canvas.addEventListener('touchmove', (e) => {
 
 // -- POINTER UP
 canvas.addEventListener('mouseup', (e) => {
-  if (e.button === 2) { stopPour(); return; }
+  if (e.button !== 0) return;
   onPointerUp(e);
 });
 canvas.addEventListener('touchend', (e) => {
-  clearTimeout(longPressTimer);
-  stopPour();
   onPointerUp(e);
 });
 
@@ -829,12 +896,15 @@ function onPointerUp(e) {
     isCharging = false;
     chargeRing.style.display = 'none';
     const pos = getPos(e.changedTouches ? { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY } : e);
-    const power = Math.min((Date.now() - chargeStart) / 2000, 1);
+    const power = Math.min((Date.now() - chargeStart) / 1538, 1);
     spawnExplode(pos.x, pos.y, activeColor, power);
   }
   if (mode === 'drag') {
     isDragging = false;
     dragLast = null;
+  }
+  if (mode === 'pour') {
+    stopPour();
   }
 }
 
@@ -876,12 +946,66 @@ function stopPour() {
 // Prevent context menu on right-click
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// -- SCROLL for brush size
-window.addEventListener('wheel', (e) => {
-  brushSize = Math.max(5, Math.min(60, brushSize - e.deltaY * 0.05));
-  updateSizeDot();
+// ═══════════════════════════════════════════════
+// BRUSH SIZE PICKER
+// ═══════════════════════════════════════════════
+
+function buildBrushOverlay() {
+  const overlay = document.getElementById('brush-overlay');
+  overlay.innerHTML = '';
+  BRUSH_SIZES.forEach((b) => {
+    const item = document.createElement('div');
+    item.className = 'brush-item' + (b.size === brushSize ? ' active' : '');
+    const preview = document.createElement('div');
+    preview.className = 'brush-preview';
+    const dot = document.createElement('div');
+    dot.className = 'brush-preview-dot';
+    // Map full brush range (5..60) to a preview range (4..18) for the menu
+    const previewSize = 4 + (b.size - 5) * (14 / 55);
+    dot.style.width = previewSize + 'px';
+    dot.style.height = previewSize + 'px';
+    preview.appendChild(dot);
+    const name = document.createElement('span');
+    name.textContent = b.name;
+    item.appendChild(preview);
+    item.appendChild(name);
+    item.addEventListener('click', () => {
+      brushSize = b.size;
+      updateSizeDot();
+      buildBrushOverlay();
+      toggleBrushPicker(false);
+    });
+    overlay.appendChild(item);
+  });
+}
+
+function toggleBrushPicker(force) {
+  const overlay = document.getElementById('brush-overlay');
+  const wrap = document.getElementById('size-dot-wrap');
+  brushOpen = force !== undefined ? force : !brushOpen;
+  if (brushOpen) {
+    buildBrushOverlay();
+    // Position the overlay so its center aligns with the size-dot button
+    const rect = wrap.getBoundingClientRect();
+    overlay.classList.add('open');
+    const overlayWidth = overlay.offsetWidth;
+    let left = rect.left + rect.width / 2 - overlayWidth / 2;
+    // Clamp to viewport with an 8px margin
+    const margin = 8;
+    left = Math.max(margin, Math.min(window.innerWidth - overlayWidth - margin, left));
+    overlay.style.left = left + 'px';
+    wrap.classList.add('active');
+    // Close other overlays
+    paletteOpen = false;
+    document.getElementById('palette-overlay').classList.remove('open');
+    musicOpen = false;
+    document.getElementById('music-overlay').classList.remove('open');
+  } else {
+    overlay.classList.remove('open');
+    wrap.classList.remove('active');
+  }
   wakeToolbar();
-});
+}
 
 function updateSizeDot() {
   const display = Math.max(6, Math.min(24, brushSize * 0.6));
@@ -1013,6 +1137,9 @@ function togglePalette(force) {
     overlay.classList.add('open');
     musicOpen = false;
     document.getElementById('music-overlay').classList.remove('open');
+    brushOpen = false;
+    document.getElementById('brush-overlay').classList.remove('open');
+    document.getElementById('size-dot-wrap').classList.remove('active');
   } else {
     overlay.classList.remove('open');
   }
@@ -1053,6 +1180,9 @@ function toggleMusic(force) {
     overlay.classList.add('open');
     paletteOpen = false;
     document.getElementById('palette-overlay').classList.remove('open');
+    brushOpen = false;
+    document.getElementById('brush-overlay').classList.remove('open');
+    document.getElementById('size-dot-wrap').classList.remove('active');
   } else {
     overlay.classList.remove('open');
   }
@@ -1128,118 +1258,455 @@ function masterGain(ctx, vol = 0.45) {
   return g;
 }
 
-// ── MOOD: Lo-fi Drift — warm pads + subtle pulse
-function startLofi(ctx) {
-  const out = masterGain(ctx, 0.38);
-  const notes = [261.63, 329.63, 392.00, 493.88]; // C maj7
-  notes.forEach((f, i) => {
-    const { osc, g } = makeOsc(ctx, 'sine', f, 0.12 + (i === 0 ? 0.06 : 0));
-    makeLFO(ctx, osc.frequency, 0.08 + i*0.03, f*0.003, f);
-    g.connect(out);
-    osc.start();
-    activeNodes.push(osc);
-  });
-  // Sub warmth
-  const { osc: sub, g: subG } = makeOsc(ctx, 'triangle', 65.41, 0.18);
-  makeLFO(ctx, sub.frequency, 0.05, 1.5, 65.41);
-  subG.connect(out);
-  sub.start();
-  activeNodes.push(sub);
-  // Gentle noise shimmer
-  const nBuf = makeNoiseBuffer(ctx, 6);
-  const noiseLoop = () => {
-    const src = ctx.createBufferSource();
-    src.buffer = nBuf;
-    const nf = ctx.createBiquadFilter();
-    nf.type = 'highpass'; nf.frequency.value = 3200;
-    const ng = ctx.createGain(); ng.gain.value = 0.025;
-    src.connect(nf); nf.connect(ng); ng.connect(out);
-    src.start(); src.loop = true;
-    activeNodes.push(src);
+// ═══════════════════════════════════════════════
+// RHYTHMIC ENGINE — step-accurate scheduling
+// ═══════════════════════════════════════════════
+// Used by groove-based genres (house, techno, garage, disco, R&B, lofi-hop).
+// Schedules notes on the audio clock so timing never drifts.
+
+let sequencerTimer = null;
+
+function startSequencer(ctx, bpm, stepsPerBeat, onStep) {
+  const stepDur = 60 / bpm / stepsPerBeat;
+  let nextStepTime = ctx.currentTime + 0.05;
+  let stepIdx = 0;
+  const lookahead = 0.1; // schedule 100ms ahead
+
+  const tick = () => {
+    while (nextStepTime < ctx.currentTime + lookahead) {
+      onStep(stepIdx, nextStepTime);
+      nextStepTime += stepDur;
+      stepIdx++;
+    }
   };
-  noiseLoop();
+  tick();
+  sequencerTimer = setInterval(tick, 25);
+  activeNodes.push({ stop: () => clearInterval(sequencerTimer) });
 }
 
-// ── MOOD: Deep Space — slow evolving pads, very sparse
-function startSpace(ctx) {
-  const out = masterGain(ctx, 0.35);
-  const freqs = [55, 82.41, 110, 164.81]; // A2 E3 A3 E4
-  freqs.forEach((f, i) => {
-    const { osc, g } = makeOsc(ctx, 'sine', f, 0.09, 3.5);
-    makeLFO(ctx, osc.frequency, 0.02 + i*0.007, f*0.005, f);
-    // Slow tremolo
-    const trem = ctx.createGain();
-    trem.gain.value = 1;
-    makeLFO(ctx, trem.gain, 0.15 + i*0.04, 0.3, 0.85);
-    g.connect(trem); trem.connect(out);
-    osc.start(); activeNodes.push(osc);
+// ── Drum voices (synthesized, no samples)
+// All voices push their oscillator/source into activeNodes so a track-switch
+// cleanup can cancel any hits scheduled into the lookahead window.
+function kick(ctx, time, out, gain = 1) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.frequency.setValueAtTime(150, time);
+  o.frequency.exponentialRampToValueAtTime(40, time + 0.12);
+  g.gain.setValueAtTime(0.9 * gain, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+  o.connect(g); g.connect(out);
+  o.start(time); o.stop(time + 0.3);
+  activeNodes.push(o);
+}
+
+function snare(ctx, time, out, gain = 1) {
+  // noise burst
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'highpass'; filt.frequency.value = 1500;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.5 * gain, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+  src.connect(filt); filt.connect(g); g.connect(out);
+  src.start(time); src.stop(time + 0.2);
+  activeNodes.push(src);
+  // body tone
+  const t = ctx.createOscillator();
+  const tg = ctx.createGain();
+  t.frequency.setValueAtTime(220, time);
+  t.frequency.exponentialRampToValueAtTime(110, time + 0.08);
+  tg.gain.setValueAtTime(0.3 * gain, time);
+  tg.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+  t.connect(tg); tg.connect(out);
+  t.start(time); t.stop(time + 0.12);
+  activeNodes.push(t);
+}
+
+function hat(ctx, time, out, gain = 1, open = false) {
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'highpass'; filt.frequency.value = 7000;
+  const g = ctx.createGain();
+  const dur = open ? 0.15 : 0.04;
+  g.gain.setValueAtTime(0.25 * gain, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  src.connect(filt); filt.connect(g); g.connect(out);
+  src.start(time); src.stop(time + dur + 0.02);
+  activeNodes.push(src);
+}
+
+function clap(ctx, time, out, gain = 1) {
+  // 3 quick noise bursts
+  for (let k = 0; k < 3; k++) {
+    const t = time + k * 0.012;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 1;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.35 * gain, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    src.connect(f); f.connect(g); g.connect(out);
+    src.start(t); src.stop(t + 0.1);
+    activeNodes.push(src);
+  }
+}
+
+// ── Pluck/lead voice — quick attack envelope on a tone
+function pluck(ctx, time, freq, out, dur = 0.4, gain = 0.3, type = 'triangle') {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(gain, time + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  o.connect(g); g.connect(out);
+  o.start(time); o.stop(time + dur + 0.02);
+  activeNodes.push(o);
+}
+
+// ── Bass note — sub-heavy
+function bassNote(ctx, time, freq, out, dur = 0.3, gain = 0.4) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = 400;
+  o.type = 'sawtooth';
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(gain, time + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  o.connect(f); f.connect(g); g.connect(out);
+  o.start(time); o.stop(time + dur + 0.02);
+  activeNodes.push(o);
+}
+
+// ── Chord stab — multi-osc stack with quick env
+function chordStab(ctx, time, freqs, out, dur = 0.25, gain = 0.18, type = 'sawtooth') {
+  freqs.forEach(f => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 1800;
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(gain, time + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    o.connect(filt); filt.connect(g); g.connect(out);
+    o.start(time); o.stop(time + dur + 0.02);
+    activeNodes.push(o);
   });
-  // Deep rumble
-  const { osc: dr, g: drG } = makeOsc(ctx, 'sine', 27.5, 0.22, 4);
-  makeLFO(ctx, dr.frequency, 0.018, 0.8, 27.5);
-  drG.connect(out); dr.start(); activeNodes.push(dr);
 }
 
-// ── MOOD: Rain Garden — noise rain + pentatonic chimes
-function startRain(ctx) {
+// ── MOOD: Lo-fi Chillhop — dusty Rhodes, swung hats, warm bass
+function startLofiHop(ctx) {
   const out = masterGain(ctx, 0.40);
-  // Rain noise
-  const nBuf = makeNoiseBuffer(ctx, 8);
-  const rainSrc = ctx.createBufferSource();
-  rainSrc.buffer = nBuf; rainSrc.loop = true;
-  const rainFilt = ctx.createBiquadFilter();
-  rainFilt.type = 'bandpass'; rainFilt.frequency.value = 900; rainFilt.Q.value = 0.5;
-  const rainGain = ctx.createGain(); rainGain.gain.value = 0.28;
-  rainSrc.connect(rainFilt); rainFilt.connect(rainGain); rainGain.connect(out);
-  rainSrc.start(); activeNodes.push(rainSrc);
-  // Pentatonic pad notes  C D E G A
-  [261.63, 293.66, 329.63, 392.00, 440.00].forEach((f, i) => {
-    const { osc, g } = makeOsc(ctx, 'sine', f * 2, 0.055, 2 + i*0.4);
-    makeLFO(ctx, osc.frequency, 0.06 + i*0.02, f*0.002, f*2);
+  // Vinyl crackle
+  const nBuf = makeNoiseBuffer(ctx, 4);
+  const cr = ctx.createBufferSource(); cr.buffer = nBuf; cr.loop = true;
+  const crf = ctx.createBiquadFilter(); crf.type = 'highpass'; crf.frequency.value = 3000;
+  const crg = ctx.createGain(); crg.gain.value = 0.03;
+  cr.connect(crf); crf.connect(crg); crg.connect(out);
+  cr.start(); activeNodes.push(cr);
+  // Warm Rhodes pad — Dm9
+  [146.83, 220.00, 261.63, 329.63].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sine', f, 0.07, 2);
+    makeLFO(ctx, osc.frequency, 0.06 + i*0.02, f*0.003, f);
     g.connect(out); osc.start(); activeNodes.push(osc);
+  });
+  // Beat — 80 BPM, swung 16ths
+  startSequencer(ctx, 80, 4, (step, time) => {
+    const s = step % 16;
+    // Swing: shift odd 16ths slightly later
+    const swung = (s % 2 === 1) ? time + 0.025 : time;
+    if (s === 0 || s === 8) kick(ctx, time, out, 0.85);
+    if (s === 4 || s === 12) snare(ctx, time, out, 0.55);
+    if (s % 2 === 0) hat(ctx, swung, out, 0.5);
+    // Bass on 1, 3.5
+    if (s === 0) bassNote(ctx, time, 73.42, out, 0.5, 0.35);
+    if (s === 6) bassNote(ctx, time, 87.31, out, 0.4, 0.32);
+    if (s === 10) bassNote(ctx, time, 65.41, out, 0.5, 0.35);
+    // Sparse Rhodes melody pluck
+    if (s === 2) pluck(ctx, time, 440, out, 0.5, 0.18, 'sine');
+    if (s === 11) pluck(ctx, time, 523.25, out, 0.4, 0.16, 'sine');
   });
 }
 
-// ── MOOD: Jazz Minimal — walking bass vibe, muted tones
-function startJazz(ctx) {
-  const out = masterGain(ctx, 0.38);
-  // Warm muted tones — minor 7th voicing  D F A C
-  [73.42, 87.31, 110.00, 130.81].forEach((f, i) => {
-    const { osc, g } = makeOsc(ctx, 'triangle', f, 0.10, 1.2);
-    makeLFO(ctx, osc.frequency, 0.04 + i*0.015, f*0.004, f);
-    g.connect(out); osc.start(); activeNodes.push(osc);
-  });
-  // Subtle brush-noise texture
-  const nBuf = makeNoiseBuffer(ctx, 5);
-  const br = ctx.createBufferSource(); br.buffer = nBuf; br.loop = true;
-  const brf = ctx.createBiquadFilter(); brf.type = 'highpass'; brf.frequency.value = 5000;
-  const brg = ctx.createGain(); brg.gain.value = 0.018;
-  br.connect(brf); brf.connect(brg); brg.connect(out);
-  br.start(); activeNodes.push(br);
-  // Bass pulse — slow arpeggiated feel via LFO-shaped gain
-  const { osc: bass, g: bassG } = makeOsc(ctx, 'sine', 36.71, 0.20, 1.5);
-  makeLFO(ctx, bassG.gain, 0.25, 0.12, 0.20);
-  makeLFO(ctx, bass.frequency, 0.07, 2.2, 36.71);
-  bassG.connect(out); bass.start(); activeNodes.push(bass);
-}
-
-// ── MOOD: Crystal — high clean tones, glass-bowl feel
-function startCrystal(ctx) {
-  const out = masterGain(ctx, 0.32);
-  // High harmonics — G maj pentatonic high register
-  [783.99, 987.77, 1174.66, 1318.51, 1567.98].forEach((f, i) => {
-    const { osc, g } = makeOsc(ctx, 'sine', f, 0.06, 3 + i*0.5);
-    makeLFO(ctx, osc.frequency, 0.03 + i*0.01, f*0.002, f);
-    // Slow swell tremolo
-    const sw = ctx.createGain(); sw.gain.value = 1;
-    makeLFO(ctx, sw.gain, 0.08 + i*0.025, 0.4, 0.7);
-    g.connect(sw); sw.connect(out);
+// ── MOOD: Synthwave — bright analog leads, gated reverb, big melodic hook
+function startSynthwave(ctx) {
+  const out = masterGain(ctx, 0.36);
+  // Lush pad — Am  Fmaj7
+  const padFreqs = [220.00, 261.63, 329.63, 392.00];
+  padFreqs.forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sawtooth', f, 0.04, 2.5);
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 1400;
+    makeLFO(ctx, filt.frequency, 0.08, 200, 1400);
+    g.disconnect(); osc.disconnect();
+    osc.connect(filt); filt.connect(g); g.connect(out);
     osc.start(); activeNodes.push(osc);
   });
-  // Sub shimmer pad
-  const { osc: pad, g: padG } = makeOsc(ctx, 'sine', 196.00, 0.14, 4);
-  makeLFO(ctx, pad.frequency, 0.025, 3, 196.00);
-  padG.connect(out); pad.start(); activeNodes.push(pad);
+  // Sub bass octave
+  const { osc: sub, g: subG } = makeOsc(ctx, 'triangle', 55.00, 0.22, 1.5);
+  subG.connect(out); sub.start(); activeNodes.push(sub);
+
+  // Melodic hook — A minor pentatonic — A C D E G
+  const melody = [440, 523.25, 587.33, 659.25, 783.99, 659.25, 587.33, 523.25];
+  // Drum machine + lead — 100 BPM
+  startSequencer(ctx, 100, 4, (step, time) => {
+    const s = step % 32;
+    if (s % 4 === 0) kick(ctx, time, out, 0.9);
+    if (s === 4 || s === 12 || s === 20 || s === 28) snare(ctx, time, out, 0.6);
+    if (s % 2 === 1) hat(ctx, time, out, 0.4, s === 7 || s === 23);
+    // Bass pulse — A2 follows root
+    if (s % 8 === 0) bassNote(ctx, time, 110.00, out, 0.6, 0.32);
+    // Melody on every 4th step, walking the hook
+    if (s % 4 === 2) {
+      const note = melody[(Math.floor(s/4)) % melody.length];
+      pluck(ctx, time, note, out, 0.45, 0.22, 'sawtooth');
+      pluck(ctx, time, note * 2, out, 0.45, 0.08, 'square');
+    }
+  });
+}
+
+// ── MOOD: Deep House — four-on-floor, filtered chord stabs, rolling bass
+function startDeepHouse(ctx) {
+  const out = masterGain(ctx, 0.40);
+  // Atmospheric pad — Fm9
+  [174.61, 207.65, 261.63, 311.13].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sine', f, 0.05, 3);
+    makeLFO(ctx, osc.frequency, 0.04 + i*0.01, f*0.002, f);
+    g.connect(out); osc.start(); activeNodes.push(osc);
+  });
+  // 122 BPM — classic deep house tempo
+  // Chord voicing F minor 7
+  const chord = [349.23, 415.30, 523.25, 622.25];
+  startSequencer(ctx, 122, 4, (step, time) => {
+    const s = step % 16;
+    if (s % 4 === 0) kick(ctx, time, out, 0.95);  // four-on-floor
+    if (s === 4 || s === 12) clap(ctx, time, out, 0.6);
+    if (s % 2 === 1) hat(ctx, time, out, 0.45, s === 11);
+    // Rolling bass — 16th note pattern on F2 / Eb2
+    if (s === 0 || s === 6 || s === 10) bassNote(ctx, time, 87.31, out, 0.25, 0.4);
+    if (s === 14) bassNote(ctx, time, 77.78, out, 0.25, 0.4);
+    // Filtered chord stabs on off-beats
+    if (s === 2 || s === 7 || s === 14) {
+      chordStab(ctx, time, chord, out, 0.3, 0.13, 'sawtooth');
+    }
+  });
+}
+
+// ── MOOD: R&B Groove — slow swung beat, Rhodes chords, smooth bass
+function startRnB(ctx) {
+  const out = masterGain(ctx, 0.42);
+  // Smooth Rhodes-like pad — Bbmaj9 (Bb D F A C)
+  [233.08, 293.66, 349.23, 440.00, 523.25].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sine', f, 0.06, 2);
+    makeLFO(ctx, osc.frequency, 0.05 + i*0.015, f*0.002, f);
+    // Slow tremolo for that warm Rhodes feel
+    const tr = ctx.createGain(); tr.gain.value = 1;
+    makeLFO(ctx, tr.gain, 0.5, 0.12, 0.9);
+    g.disconnect();
+    osc.connect(g); g.connect(tr); tr.connect(out);
+    osc.start(); activeNodes.push(osc);
+  });
+  // 72 BPM — slow jam tempo, swung
+  // Pentatonic lead motif Bb minor pent: Bb Db Eb F Ab
+  const leadNotes = [466.16, 554.37, 622.25, 698.46, 466.16, 415.30, 466.16];
+  let leadIdx = 0;
+  startSequencer(ctx, 72, 4, (step, time) => {
+    const s = step % 16;
+    const swung = (s % 2 === 1) ? time + 0.03 : time;
+    if (s === 0 || s === 10) kick(ctx, time, out, 0.85);
+    if (s === 4 || s === 12) snare(ctx, time, out, 0.55);
+    if (s % 2 === 0) hat(ctx, swung, out, 0.35);
+    if (s === 7) hat(ctx, swung, out, 0.5, true);  // open hat ghost
+    // Smooth bass — Bb1 / F1
+    if (s === 0) bassNote(ctx, time, 58.27, out, 0.7, 0.38);
+    if (s === 8) bassNote(ctx, time, 87.31, out, 0.6, 0.36);
+    if (s === 13) bassNote(ctx, time, 77.78, out, 0.5, 0.34);
+    // Sparse Rhodes melody
+    if (s === 6 || s === 14) {
+      const note = leadNotes[leadIdx % leadNotes.length];
+      leadIdx++;
+      pluck(ctx, time, note, out, 0.7, 0.16, 'sine');
+      pluck(ctx, time + 0.005, note * 1.5, out, 0.7, 0.06, 'sine');
+    }
+  });
+}
+
+// ── MOOD: Melodic Techno — driving kick, hypnotic arpeggios, evolving pad
+function startTechno(ctx) {
+  const out = masterGain(ctx, 0.38);
+  // Evolving pad — A minor
+  [110.00, 130.81, 164.81, 196.00].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sawtooth', f, 0.03, 4);
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 600;
+    makeLFO(ctx, filt.frequency, 0.04 + i*0.01, 400, 800);
+    osc.disconnect(); g.disconnect();
+    osc.connect(filt); filt.connect(g); g.connect(out);
+    osc.start(); activeNodes.push(osc);
+  });
+  // 124 BPM — driving techno
+  // 16-step arpeggio on A minor — A C E A C E A C
+  const arp = [220.00, 261.63, 329.63, 440.00, 261.63, 329.63, 440.00, 523.25];
+  startSequencer(ctx, 124, 4, (step, time) => {
+    const s = step % 16;
+    if (s % 4 === 0) kick(ctx, time, out, 1.0);  // four-on-floor, hard
+    if (s === 4 || s === 12) clap(ctx, time, out, 0.55);
+    if (s % 2 === 1) hat(ctx, time, out, 0.5);
+    if (s === 14) hat(ctx, time, out, 0.7, true);
+    // Driving sub bass on every beat
+    if (s % 4 === 0) bassNote(ctx, time, 55.00, out, 0.22, 0.42);
+    // Hypnotic arp — every 16th
+    const note = arp[s % arp.length];
+    pluck(ctx, time, note, out, 0.18, 0.12, 'sawtooth');
+  });
+}
+
+// ── MOOD: Ambient Pop — sparse plucks, lush pads, dreamy melodic motif, no drums
+function startAmbient(ctx) {
+  const out = masterGain(ctx, 0.36);
+  // Lush pad — Cmaj7
+  [261.63, 329.63, 392.00, 493.88].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sine', f, 0.08, 4);
+    makeLFO(ctx, osc.frequency, 0.03 + i*0.01, f*0.003, f);
+    const tr = ctx.createGain(); tr.gain.value = 1;
+    makeLFO(ctx, tr.gain, 0.1 + i*0.03, 0.2, 0.85);
+    g.disconnect();
+    osc.connect(g); g.connect(tr); tr.connect(out);
+    osc.start(); activeNodes.push(osc);
+  });
+  // Soft bass foundation
+  const { osc: sub, g: subG } = makeOsc(ctx, 'triangle', 65.41, 0.16, 3);
+  subG.connect(out); sub.start(); activeNodes.push(sub);
+  // Free-time-ish melodic motif at ~50 BPM, sparse
+  // C major pentatonic — C D E G A
+  const motif = [523.25, 783.99, 880.00, 783.99, 659.25, 523.25, 587.33, 659.25];
+  let mi = 0;
+  startSequencer(ctx, 50, 2, (step, time) => {
+    const s = step % 16;
+    // Sparse — only play on certain steps
+    if ([0, 5, 8, 11, 14].includes(s)) {
+      const note = motif[mi % motif.length];
+      mi++;
+      pluck(ctx, time, note, out, 1.5, 0.11, 'sine');
+      pluck(ctx, time + 0.02, note * 2, out, 1.2, 0.04, 'sine');
+    }
+  });
+}
+
+// ── MOOD: Chillwave — hazy pads, slow tempo, nostalgic melodies, R&B-adjacent
+function startChillwave(ctx) {
+  const out = masterGain(ctx, 0.40);
+  // Hazy detuned pad — Gm9
+  [196.00, 233.08, 293.66, 349.23, 440.00].forEach((f, i) => {
+    const detune = (i % 2 === 0) ? f : f * 1.005; // slight chorus
+    const { osc, g } = makeOsc(ctx, 'sawtooth', detune, 0.025, 3);
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 900;
+    makeLFO(ctx, filt.frequency, 0.05, 200, 900);
+    osc.disconnect(); g.disconnect();
+    osc.connect(filt); filt.connect(g); g.connect(out);
+    osc.start(); activeNodes.push(osc);
+  });
+  // 88 BPM — chillwave tempo
+  startSequencer(ctx, 88, 4, (step, time) => {
+    const s = step % 16;
+    if (s === 0 || s === 8) kick(ctx, time, out, 0.8);
+    if (s === 4 || s === 12) snare(ctx, time, out, 0.45);
+    if (s % 2 === 0) hat(ctx, time, out, 0.3);
+    // Soft sub bass — G1
+    if (s === 0) bassNote(ctx, time, 49.00, out, 0.7, 0.34);
+    if (s === 8) bassNote(ctx, time, 65.41, out, 0.6, 0.32);
+    // Nostalgic bell pluck — G major pentatonic
+    if (s === 6) pluck(ctx, time, 587.33, out, 0.6, 0.13, 'triangle');
+    if (s === 14) pluck(ctx, time, 698.46, out, 0.6, 0.13, 'triangle');
+  });
+}
+
+// ── MOOD: Future Garage — skittery 2-step drums, sub bass, atmospheric pads
+function startGarage(ctx) {
+  const out = masterGain(ctx, 0.40);
+  // Atmospheric pad — F# minor
+  [185.00, 220.00, 277.18, 329.63].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sine', f, 0.045, 3);
+    makeLFO(ctx, osc.frequency, 0.06 + i*0.015, f*0.003, f);
+    g.connect(out); osc.start(); activeNodes.push(osc);
+  });
+  // 130 BPM — UK garage
+  // Skittery 2-step pattern — kick on 1 + 11, snare on 5 + 13, lots of ghost hats
+  startSequencer(ctx, 130, 4, (step, time) => {
+    const s = step % 16;
+    if (s === 0) kick(ctx, time, out, 0.95);
+    if (s === 10) kick(ctx, time, out, 0.85);
+    if (s === 4) snare(ctx, time, out, 0.6);
+    if (s === 12) snare(ctx, time, out, 0.55);
+    // Skitter hat pattern — emphasis on off-beats
+    if (s % 2 === 1) hat(ctx, time, out, 0.4);
+    if (s === 6 || s === 14) hat(ctx, time + 0.03, out, 0.3); // ghost
+    if (s === 7) hat(ctx, time, out, 0.55, true); // open
+    // Heavy sub bass — F#1, drops
+    if (s === 0) bassNote(ctx, time, 46.25, out, 0.6, 0.45);
+    if (s === 6) bassNote(ctx, time, 41.20, out, 0.4, 0.42);
+    if (s === 11) bassNote(ctx, time, 46.25, out, 0.5, 0.43);
+    // Vocal-style lead pluck — F# minor pent
+    if (s === 2) pluck(ctx, time, 740.00, out, 0.4, 0.13, 'sine');
+    if (s === 9) pluck(ctx, time, 880.00, out, 0.4, 0.12, 'sine');
+  });
+}
+
+// ── MOOD: Italo Disco — arpeggiated bass, bright stabs, catchy synth melody
+function startItalo(ctx) {
+  const out = masterGain(ctx, 0.38);
+  // Bright pad — D minor
+  [146.83, 220.00, 293.66, 349.23].forEach((f, i) => {
+    const { osc, g } = makeOsc(ctx, 'sawtooth', f, 0.025, 2);
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 1600;
+    osc.disconnect(); g.disconnect();
+    osc.connect(filt); filt.connect(g); g.connect(out);
+    osc.start(); activeNodes.push(osc);
+  });
+  // 120 BPM — classic italo
+  // Arpeggiated bass pattern — D minor: D A D F A F D A
+  const bassArp = [73.42, 110.00, 146.83, 174.61, 220.00, 174.61, 146.83, 110.00];
+  // Catchy melody — D minor pent up the octave
+  const melody = [587.33, 698.46, 880.00, 783.99, 698.46, 587.33, 523.25, 587.33];
+  // Bright chord stabs
+  const stabChord = [293.66, 349.23, 440.00];
+  startSequencer(ctx, 120, 4, (step, time) => {
+    const s = step % 32;
+    // Four-on-floor disco kick
+    if (s % 4 === 0) kick(ctx, time, out, 0.9);
+    if (s === 4 || s === 12 || s === 20 || s === 28) snare(ctx, time, out, 0.55);
+    // Open hat on every off-beat (classic disco)
+    if (s % 2 === 1) hat(ctx, time, out, 0.55, true);
+    // Arpeggiated bass — every 8th note
+    if (s % 2 === 0) {
+      const note = bassArp[(s / 2) % bassArp.length];
+      bassNote(ctx, time, note, out, 0.18, 0.36);
+    }
+    // Catchy melody — quarter notes
+    if (s % 4 === 0) {
+      const note = melody[(s / 4) % melody.length];
+      pluck(ctx, time, note, out, 0.35, 0.18, 'square');
+    }
+    // Bright stabs on the &-of-2 and &-of-4
+    if (s === 6 || s === 14 || s === 22 || s === 30) {
+      chordStab(ctx, time, stabChord, out, 0.2, 0.12, 'sawtooth');
+    }
+  });
 }
 
 // ── Main dispatcher
@@ -1262,11 +1729,15 @@ function playTrack(idx) {
   // Generative Web Audio track
   const ctx = getAudioCtx();
   switch (track.mood) {
-    case 'lofi':   startLofi(ctx);   break;
-    case 'space':  startSpace(ctx);  break;
-    case 'rain':   startRain(ctx);   break;
-    case 'jazz':   startJazz(ctx);   break;
-    case 'crystal':startCrystal(ctx);break;
+    case 'lofiHop':   startLofiHop(ctx);   break;
+    case 'synthwave': startSynthwave(ctx); break;
+    case 'deepHouse': startDeepHouse(ctx); break;
+    case 'rnb':       startRnB(ctx);       break;
+    case 'techno':    startTechno(ctx);    break;
+    case 'ambient':   startAmbient(ctx);   break;
+    case 'chillwave': startChillwave(ctx); break;
+    case 'garage':    startGarage(ctx);    break;
+    case 'italo':     startItalo(ctx);     break;
   }
 }
 
@@ -1275,17 +1746,25 @@ function playTrack(idx) {
 // ═══════════════════════════════════════════════
 
 function saveArtwork() {
-  const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth;
   const h = window.innerHeight;
 
-  // Watermark
-  ctx.save();
-  ctx.font = '11px DM Sans, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.28)';
-  ctx.textAlign = 'right';
-  ctx.fillText('Pure Vibes by Playology', w - 14, h - 12);
-  ctx.restore();
+  // Build export on a temp canvas so we don't stack watermarks on the live canvas
+  const out = document.createElement('canvas');
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.drawImage(canvas, 0, 0);
+
+  // Watermark — drawn in CSS-pixel space on the temp canvas
+  const dpr = window.devicePixelRatio || 1;
+  octx.save();
+  octx.scale(dpr, dpr);
+  octx.font = '11px DM Sans, sans-serif';
+  octx.fillStyle = 'rgba(255,255,255,0.28)';
+  octx.textAlign = 'right';
+  octx.fillText('Pure Vibes by Playology', w - 14, h - 12);
+  octx.restore();
 
   const now = new Date();
   const pad = n => String(n).padStart(2,'0');
@@ -1293,8 +1772,10 @@ function saveArtwork() {
 
   const link = document.createElement('a');
   link.download = fname;
-  link.href = canvas.toDataURL('image/jpeg', 0.95);
+  link.href = out.toDataURL('image/jpeg', 0.95);
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
   showToast('Saved as ' + fname);
 }
 
@@ -1343,6 +1824,7 @@ function closeInstructions() {
 canvas.addEventListener('mousedown', () => {
   if (paletteOpen) togglePalette(false);
   if (musicOpen) toggleMusic(false);
+  if (brushOpen) toggleBrushPicker(false);
 });
 
 // ═══════════════════════════════════════════════
